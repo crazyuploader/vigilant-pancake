@@ -1,0 +1,134 @@
+name: Validate MDX Metadata
+
+on:
+  pull_request:
+    paths:
+      - '**.mdx'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-mdx:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed MDX files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            **.mdx
+
+      - name: Validate MDX metadata
+        if: steps.changed-files.outputs.any_changed == 'true'
+        id: validate
+        run: |
+          echo "Checking MDX files for required metadata..."
+          
+          MISSING_METADATA=0
+          INVALID_FILES=""
+          
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "Checking: $file"
+            
+            # Extract frontmatter (content between --- markers)
+            FRONTMATTER=$(sed -n '/^---$/,/^---$/p' "$file" | sed '1d;$d')
+            
+            # Check for tags field
+            if ! echo "$FRONTMATTER" | grep -q "^tags:"; then
+              echo "❌ Missing 'tags:' field in $file"
+              MISSING_METADATA=1
+              INVALID_FILES="$INVALID_FILES\n- $file (missing tags)"
+            fi
+            
+            # Check for date field
+            if ! echo "$FRONTMATTER" | grep -q "^date:"; then
+              echo "❌ Missing 'date:' field in $file"
+              MISSING_METADATA=1
+              INVALID_FILES="$INVALID_FILES\n- $file (missing date)"
+            fi
+            
+            if [ $MISSING_METADATA -eq 0 ]; then
+              echo "✅ $file has required metadata"
+            fi
+          done
+          
+          if [ $MISSING_METADATA -eq 1 ]; then
+            echo "validation_failed=true" >> $GITHUB_OUTPUT
+            echo -e "invalid_files<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$INVALID_FILES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "validation_failed=false" >> $GITHUB_OUTPUT
+            echo "✅ All MDX files have required metadata"
+          fi
+
+      - name: Add blocking label
+        if: failure() && steps.validate.outputs.validation_failed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['mdx-metadata-missing']
+            });
+
+      - name: Comment on PR
+        if: failure() && steps.validate.outputs.validation_failed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const invalidFiles = `${{ steps.validate.outputs.invalid_files }}`;
+            const body = `## ❌ MDX Metadata Validation Failed
+            
+            The following MDX files are missing required metadata fields:
+            ${invalidFiles}
+            
+            **Required fields:**
+            - \`tags: []\` - An array of tags
+            - \`date:\` - A date field
+            
+            **Example frontmatter:**
+            \`\`\`yaml
+            ---
+            title: My Post
+            date: 2025-10-16
+            tags: ["javascript", "tutorial"]
+            ---
+            \`\`\`
+            
+            Please add the missing metadata fields to proceed.`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Remove label if validation passes
+        if: success() && steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'mdx-metadata-missing'
+              });
+            } catch (error) {
+              // Label might not exist, that's okay
+              console.log('Label does not exist or already removed');
+            }
