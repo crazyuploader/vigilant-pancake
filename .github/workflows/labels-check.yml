@@ -3,7 +3,7 @@ name: Validate MDX Metadata
 on:
   pull_request:
     paths:
-      - '**.mdx'
+      - 'data/docs/**.mdx'
 
 permissions:
   contents: read
