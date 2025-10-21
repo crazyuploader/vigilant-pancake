@@ -27,7 +27,7 @@ jobs:
         id: changed-files
         uses: tj-actions/changed-files@v46
         with:
-          files: "data/docs/**.mdx"
+          files: "data/docs/**/*.mdx"
 
       - name: Validate documentation metadata
         if: steps.changed-files.outputs.any_changed == 'true'
