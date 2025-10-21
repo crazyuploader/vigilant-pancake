@@ -24,7 +24,7 @@ jobs:
         uses: tj-actions/changed-files@v46
         with:
           files: |
-            **.mdx
+            data/docs/**.mdx
 
       - name: Validate MDX metadata
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -89,10 +89,23 @@ jobs:
         with:
           script: |
             const invalidFiles = `${{ steps.validate.outputs.invalid_files }}`;
+            
+            // Parse invalid files and create clickable links
+            const fileLines = invalidFiles.trim().split('\n').filter(line => line.trim());
+            const linkedFiles = fileLines.map(line => {
+              const match = line.match(/- (.+?) \((.+)\)/);
+              if (match) {
+                const [, filePath, reason] = match;
+                const fileUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${context.payload.pull_request.head.sha}/${filePath}`;
+                return `- [${filePath}](${fileUrl}) (${reason})`;
+              }
+              return line;
+            }).join('\n');
+            
             const body = `## ❌ MDX Metadata Validation Failed
             
             The following MDX files are missing required metadata fields:
-            ${invalidFiles}
+            ${linkedFiles}
             
             **Required fields:**
             - \`tags: []\` - An array of tags
