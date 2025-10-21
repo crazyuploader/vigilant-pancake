@@ -3,9 +3,8 @@ name: Validate MDX Metadata
 on:
   pull_request:
     paths:
-      - 'data/docs/**.mdx'
+      - "data/docs/**.mdx"
 
-# Prevent multiple workflow runs for same PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -17,7 +16,7 @@ permissions:
 jobs:
   validate-mdx:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,158 +27,180 @@ jobs:
         id: changed-files
         uses: tj-actions/changed-files@v46
         with:
-          files: |
-            **.mdx
+          files: "**.mdx"
 
       - name: Validate MDX metadata
         if: steps.changed-files.outputs.any_changed == 'true'
         id: validate
         run: |
+          set -e
+
           echo "Checking MDX files for required metadata..."
-          
-          INVALID_FILES=""
-          EXIT_CODE=0
-          
+
+          INVALID_FILES=()
+          ALL_VALID=true
+          CURRENT_DATE=$(date +%Y-%m-%d)
+
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
             echo "Checking: $file"
             
-            # Extract frontmatter more reliably (only between first two --- markers)
-            FRONTMATTER=$(awk '/^---$/{if(++count==2) exit} count==1 && !/^---$/' "$file")
+            # Extract frontmatter between first two --- markers
+            if ! FRONTMATTER=$(awk '/^---$/{if(++count==2) exit} count==1 && !/^---$/' "$file" 2>/dev/null); then
+              echo "❌ $file: cannot read file"
+              INVALID_FILES+=("$file|cannot read file")
+              ALL_VALID=false
+              continue
+            fi
             
-            ERRORS=""
+            ERRORS=()
             
-            # Check for tags field and validate it's an array
+            # Validate tags field
             if ! echo "$FRONTMATTER" | grep -q "^tags:"; then
-              ERRORS="${ERRORS}missing tags; "
-            elif echo "$FRONTMATTER" | grep "^tags:" | grep -qv "\["; then
-              ERRORS="${ERRORS}tags must be an array; "
+              ERRORS+=("missing tags")
+            elif ! echo "$FRONTMATTER" | grep "^tags:" | grep -q "\["; then
+              ERRORS+=("tags must be an array")
             fi
             
-            # Check for date field and validate format (YYYY-MM-DD)
+            # Validate date field
             if ! echo "$FRONTMATTER" | grep -q "^date:"; then
-              ERRORS="${ERRORS}missing date; "
+              ERRORS+=("missing date")
             elif ! echo "$FRONTMATTER" | grep "^date:" | grep -qE "[0-9]{4}-[0-9]{2}-[0-9]{2}"; then
-              ERRORS="${ERRORS}invalid date format (use YYYY-MM-DD); "
+              ERRORS+=("invalid date format - use YYYY-MM-DD")
             fi
             
-            if [ -n "$ERRORS" ]; then
-              echo "❌ $file: $ERRORS"
-              INVALID_FILES="$INVALID_FILES\n- $file (${ERRORS%, })"
-              EXIT_CODE=1
+            if [ ${#ERRORS[@]} -gt 0 ]; then
+              ERROR_MSG=$(IFS="; "; echo "${ERRORS[*]}")
+              echo "❌ $file: $ERROR_MSG"
+              INVALID_FILES+=("$file|$ERROR_MSG")
+              ALL_VALID=false
             else
               echo "✅ $file has valid metadata"
             fi
-          done
-          
-          if [ $EXIT_CODE -eq 1 ]; then
+          done <<< "${{ steps.changed-files.outputs.all_changed_files }}"
+
+          # Set outputs
+          echo "current_date=$CURRENT_DATE" >> $GITHUB_OUTPUT
+
+          if [ "$ALL_VALID" = false ]; then
             echo "validation_failed=true" >> $GITHUB_OUTPUT
-            echo "invalid_files<<EOF" >> $GITHUB_OUTPUT
-            echo -e "$INVALID_FILES" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            
+            # Format invalid files for output
+            {
+              echo "invalid_files<<EOF"
+              printf '%s\n' "${INVALID_FILES[@]}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+            
             exit 1
           else
             echo "validation_failed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Add blocking label
-        if: failure() && steps.validate.outputs.validation_failed == 'true'
+      - name: Update PR with validation results
+        if: always() && steps.changed-files.outputs.any_changed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            await github.rest.issues.addLabels({
+            const validationFailed = '${{ steps.validate.outputs.validation_failed }}' === 'true';
+            const currentDate = '${{ steps.validate.outputs.current_date }}';
+
+            // Find existing bot comment
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              labels: ['mdx-metadata-missing']
             });
 
-      - name: Comment on PR
-        if: failure() && steps.validate.outputs.validation_failed == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const invalidFiles = `${{ steps.validate.outputs.invalid_files }}`;
-            
-            // Check if comment already exists
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            
-            const botComment = comments.data.find(comment => 
+            const botComment = comments.find(comment => 
               comment.user.type === 'Bot' && 
-              comment.body.includes('## Docs Metadata validation failed')
+              comment.body.includes('## 📝 MDX Metadata Validation')
             );
-            
-            // Parse invalid files and create clickable links
-            const fileLines = invalidFiles.trim().split('\n').filter(line => line.trim());
-            const linkedFiles = fileLines.map(line => {
-              const match = line.match(/- (.+?) \((.+)\)/);
-              if (match) {
-                const [, filePath, reason] = match;
-                const fileUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${context.payload.pull_request.head.sha}/${filePath}`;
-                return `- [${filePath}](${fileUrl}) (${reason})`;
-              }
-              return line;
-            }).join('\n');
-            
-            // Get current date in YYYY-MM-DD format
-            const currentDate = new Date().toISOString().split('T')[0];
-            
-            const body = `## Docs Metadata validation failed
-            
-            The following MDX files are missing required metadata fields:
-            ${linkedFiles}
-            
-            **Required fields:**
-            - \`tags: []\` - An array of tags (e.g., \`["SigNoz Cloud", "Self-Host"]\`)
-            - \`date:\` - Date in YYYY-MM-DD format (e.g., \`${currentDate}\`)
-            
-            **Example frontmatter:**
-            \`\`\`yaml
-            ---
-            title: My Post
-            date: ${currentDate}
-            tags: ["SigNoz Cloud", "Self-Host"]
-            ---
-            \`\`\`
-            
-            Please add the missing metadata fields to proceed.`;
-            
-            if (botComment) {
-              // Update existing comment instead of creating duplicate
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: body
-              });
-            } else {
-              // Create new comment
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-            }
 
-      - name: Remove label if validation passes
-        if: success() && steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              await github.rest.issues.removeLabel({
+            if (validationFailed) {
+              // Add blocking label
+              await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                name: 'mdx-metadata-missing'
+                labels: ['mdx-metadata-missing']
               });
-            } catch (error) {
-              // Label might not exist, that's okay
-              console.log('Label does not exist or already removed');
+              
+              // Parse and format invalid files
+              const invalidFilesRaw = `${{ steps.validate.outputs.invalid_files }}`;
+              const fileLines = invalidFilesRaw.trim().split('\n').filter(Boolean);
+              
+              const linkedFiles = fileLines.map(line => {
+                const [filePath, reason] = line.split('|');
+                const fileUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${context.payload.pull_request.head.sha}/${filePath}`;
+                return `- [${filePath}](${fileUrl}) — ${reason}`;
+              }).join('\n');
+              
+              const body = `## 📝 MDX Metadata Validation
+              
+              ❌ **Validation Failed**
+              
+              The following MDX files are missing required metadata:
+              
+              ${linkedFiles}
+              
+              ### Required Fields
+              - \`tags: []\` — Array of tags (e.g., \`["SigNoz Cloud", "Self-Host"]\`)
+              - \`date:\` — Date in YYYY-MM-DD format
+              
+              ### Example
+              \`\`\`yaml
+              ---
+              title: My Documentation Page
+              date: ${currentDate}
+              tags: ["SigNoz Cloud", "Self-Host"]
+              ---
+              \`\`\`
+              
+              Please update the metadata to proceed with this PR.`;
+              
+              if (botComment) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: body
+                });
+              }
+            } else {
+              // Remove label on success
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: 'mdx-metadata-missing'
+                });
+              } catch (error) {
+                console.log('Label does not exist or already removed');
+              }
+              
+              // Update or delete comment on success
+              if (botComment) {
+                const successBody = `## 📝 MDX Metadata Validation
+                
+                ✅ **All Valid**
+                
+                All MDX files have the required metadata fields.`;
+                
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: successBody
+                });
+              }
             }
 
       - name: Generate summary
@@ -190,7 +211,10 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "The following files have metadata issues:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo -e "${{ steps.validate.outputs.invalid_files }}" >> $GITHUB_STEP_SUMMARY
+            
+            while IFS='|' read -r file reason; do
+              echo "- **$file**: $reason" >> $GITHUB_STEP_SUMMARY
+            done <<< "${{ steps.validate.outputs.invalid_files }}"
           else
             echo "## ✅ All MDX Files Valid" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
