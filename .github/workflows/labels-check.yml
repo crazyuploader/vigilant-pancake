@@ -102,7 +102,7 @@ jobs:
               return line;
             }).join('\n');
             
-            const body = `## ❌ MDX Metadata Validation Failed
+            const body = `## Docs Metadata validation failed
             
             The following MDX files are missing required metadata fields:
             ${linkedFiles}
