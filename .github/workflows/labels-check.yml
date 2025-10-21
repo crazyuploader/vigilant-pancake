@@ -24,7 +24,7 @@ jobs:
         uses: tj-actions/changed-files@v46
         with:
           files: |
-            data/docs/**.mdx
+            **.mdx
 
       - name: Validate MDX metadata
         if: steps.changed-files.outputs.any_changed == 'true'
