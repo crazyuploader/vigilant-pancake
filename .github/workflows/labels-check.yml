@@ -3,7 +3,7 @@ name: Validate Docs Metadata
 on:
   pull_request:
     paths:
-      - 'data/docs/**.mdx'
+      - "data/docs/**.mdx"
 
 concurrency:
   group: validate-docs-${{ github.event.pull_request.number || github.sha }}
@@ -16,7 +16,7 @@ permissions:
 jobs:
   validate-docs-metadata:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,20 +27,20 @@ jobs:
         id: changed-files
         uses: tj-actions/changed-files@v46
         with:
-          files: '**.mdx'
+          files: "data/docs/**.mdx"
 
       - name: Validate documentation metadata
         if: steps.changed-files.outputs.any_changed == 'true'
         id: validate
         run: |
           set -e
-          
+
           echo "Checking documentation files for required metadata..."
-          
+
           INVALID_FILES=()
           ALL_VALID=true
           CURRENT_DATE=$(date +%Y-%m-%d)
-          
+
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
             echo "Checking: $file"
             
@@ -77,10 +77,10 @@ jobs:
               echo "✅ $file has valid metadata"
             fi
           done
-          
+
           # Set outputs
           echo "current_date=$CURRENT_DATE" >> $GITHUB_OUTPUT
-          
+
           if [ "$ALL_VALID" = false ]; then
             echo "validation_failed=true" >> $GITHUB_OUTPUT
             
@@ -103,19 +103,19 @@ jobs:
           script: |
             const validationFailed = '${{ steps.validate.outputs.validation_failed }}' === 'true';
             const currentDate = '${{ steps.validate.outputs.current_date }}';
-            
+
             // Find existing bot comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
+
             const botComment = comments.find(comment => 
               comment.user.type === 'Bot' && 
               comment.body.includes('## 📄 Documentation Metadata Validation')
             );
-            
+
             if (validationFailed) {
               // Add blocking label
               await github.rest.issues.addLabels({
