@@ -102,6 +102,9 @@ jobs:
               return line;
             }).join('\n');
             
+            // Get current date in YYYY-MM-DD format
+            const currentDate = new Date().toISOString().split('T')[0];
+            
             const body = `## Docs Metadata validation failed
             
             The following MDX files are missing required metadata fields:
@@ -115,8 +118,8 @@ jobs:
             \`\`\`yaml
             ---
             title: My Post
-            date: 2025-10-16
-            tags: ["javascript", "tutorial"]
+            date: ${currentDate}
+            tags: ["SigNoz Cloud", "Self-Host"]
             ---
             \`\`\`
             
