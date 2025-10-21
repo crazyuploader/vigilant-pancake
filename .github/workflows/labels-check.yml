@@ -1,9 +1,9 @@
-name: Validate MDX Metadata
+name: Validate Docs Metadata
 
 on:
   pull_request:
     paths:
-      - "data/docs/**.mdx"
+      - 'data/docs/**.mdx'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -14,33 +14,33 @@ permissions:
   pull-requests: write
 
 jobs:
-  validate-mdx:
+  validate-docs-metadata:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get changed MDX files
+      - name: Get changed documentation files
         id: changed-files
         uses: tj-actions/changed-files@v46
         with:
-          files: "**.mdx"
+          files: '**.mdx'
 
-      - name: Validate MDX metadata
+      - name: Validate documentation metadata
         if: steps.changed-files.outputs.any_changed == 'true'
         id: validate
         run: |
           set -e
-
-          echo "Checking MDX files for required metadata..."
-
+          
+          echo "Checking documentation files for required metadata..."
+          
           INVALID_FILES=()
           ALL_VALID=true
           CURRENT_DATE=$(date +%Y-%m-%d)
-
+          
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
             echo "Checking: $file"
             
@@ -76,11 +76,11 @@ jobs:
             else
               echo "✅ $file has valid metadata"
             fi
-          done <<< "${{ steps.changed-files.outputs.all_changed_files }}"
-
+          done
+          
           # Set outputs
           echo "current_date=$CURRENT_DATE" >> $GITHUB_OUTPUT
-
+          
           if [ "$ALL_VALID" = false ]; then
             echo "validation_failed=true" >> $GITHUB_OUTPUT
             
@@ -103,26 +103,26 @@ jobs:
           script: |
             const validationFailed = '${{ steps.validate.outputs.validation_failed }}' === 'true';
             const currentDate = '${{ steps.validate.outputs.current_date }}';
-
+            
             // Find existing bot comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-
+            
             const botComment = comments.find(comment => 
               comment.user.type === 'Bot' && 
-              comment.body.includes('## 📝 MDX Metadata Validation')
+              comment.body.includes('## 📄 Documentation Metadata Validation')
             );
-
+            
             if (validationFailed) {
               // Add blocking label
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                labels: ['mdx-metadata-missing']
+                labels: ['docs-metadata-missing']
               });
               
               // Parse and format invalid files
@@ -135,11 +135,11 @@ jobs:
                 return `- [${filePath}](${fileUrl}) — ${reason}`;
               }).join('\n');
               
-              const body = `## 📝 MDX Metadata Validation
+              const body = `## 📄 Documentation Metadata Validation
               
               ❌ **Validation Failed**
               
-              The following MDX files are missing required metadata:
+              The following documentation files are missing required metadata:
               
               ${linkedFiles}
               
@@ -156,7 +156,7 @@ jobs:
               ---
               \`\`\`
               
-              Please update the metadata to proceed with this PR.`;
+              Please add the required metadata to these docs to proceed with this PR.`;
               
               if (botComment) {
                 await github.rest.issues.updateComment({
@@ -180,19 +180,19 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
-                  name: 'mdx-metadata-missing'
+                  name: 'docs-metadata-missing'
                 });
               } catch (error) {
                 console.log('Label does not exist or already removed');
               }
               
-              // Update or delete comment on success
+              // Update comment on success
               if (botComment) {
-                const successBody = `## 📝 MDX Metadata Validation
+                const successBody = `## 📄 Documentation Metadata Validation
                 
                 ✅ **All Valid**
                 
-                All MDX files have the required metadata fields.`;
+                All documentation files have the required metadata fields.`;
                 
                 await github.rest.issues.updateComment({
                   owner: context.repo.owner,
@@ -209,14 +209,14 @@ jobs:
           if [ "${{ steps.validate.outputs.validation_failed }}" == "true" ]; then
             echo "## ❌ Validation Failed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following files have metadata issues:" >> $GITHUB_STEP_SUMMARY
+            echo "The following documentation files have metadata issues:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             
             while IFS='|' read -r file reason; do
               echo "- **$file**: $reason" >> $GITHUB_STEP_SUMMARY
             done <<< "${{ steps.validate.outputs.invalid_files }}"
           else
-            echo "## ✅ All MDX Files Valid" >> $GITHUB_STEP_SUMMARY
+            echo "## ✅ All Documentation Files Valid" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "All changed MDX files have the required metadata fields." >> $GITHUB_STEP_SUMMARY
+            echo "All changed documentation files have the required metadata fields." >> $GITHUB_STEP_SUMMARY
           fi
