@@ -41,9 +41,7 @@ jobs:
           ALL_VALID=true
           CURRENT_DATE=$(date +%Y-%m-%d)
 
-          while IFS= read -r file; do
-            [[ -z "$file" ]] && continue
-            
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
             echo "Checking: $file"
             
             # Extract frontmatter between first two --- markers
