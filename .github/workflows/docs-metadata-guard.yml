@@ -6,13 +6,13 @@ on:
       - "data/docs/**"
       - "next.config.js"
       - "scripts/check-docs-metadata.js"
-      - "tests/doc-metadata.test.js"
+      - "tests/docs-metadata.test.js"
       - "tests/fixtures/**"
       - "package.json"
-      - ".github/workflows/label-check.yml"
+      - ".github/workflows/docs-metadata-guard.yml"
 
 jobs:
-  check-redirects:
+  check-metadata:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -25,11 +25,14 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile --non-interactive
+      - name: Enable Corepack
+        run: corepack enable
 
-      - name: Run doc redirect tests
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run docs metadata tests
         run: yarn test:docs-metadata
 
-      - name: Validate docs redirects
+      - name: Validate docs metadata
         run: yarn check:docs-metadata
