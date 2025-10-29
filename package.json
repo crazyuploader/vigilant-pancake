@@ -2,7 +2,9 @@
   "name": "vigilant-pancake",
   "packageManager": "yarn@4.10.3",
   "scripts": {
-    "check:docs-metadata": "node scripts/check-docs-metadata.js"
+    "check:docs-metadata": "node scripts/check-docs-metadata.js",
+    "test:docs-metadata": "node --test tests/docs-metadata.test.js",
+    "prepare": "husky"
   },
   "devDependencies": {
     "husky": "^9.1.7"
