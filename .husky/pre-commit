@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+set -e
+
+STAGED_FILES=$(git diff --cached --name-only)
+
+# Check for docs metadata
+if printf '%s\n' "$STAGED_FILES" | grep -E '^data/docs/.*\.mdx$' >/dev/null; then
+  echo 'husky (pre-commit): validating docs metadata'
+  HUSKY_PRE_COMMIT=true yarn check:docs-metadata
+else
+  echo 'husky (pre-commit): skipping docs metadata check (no documentation changes staged)'
+fi
