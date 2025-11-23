@@ -1,6 +1,6 @@
 {
   "name": "vigilant-pancake",
-  "packageManager": "yarn@4.10.3",
+  "packageManager": "yarn@4.12.0",
   "scripts": {
     "check:docs-metadata": "node scripts/check-docs-metadata.js",
     "test:docs-metadata": "node --test tests/docs-metadata.test.js",
